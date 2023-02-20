@@ -3,19 +3,7 @@ import json
 
 
 class Ticket:
-
-    def __init__(self, project: dict, summary: str, issue_type: dict, description: str = None):
-        """Constructor for the Jira ticket object.
-
-        project: Dictionary containing what board to post ticket on.
-                 Example:
-                     {"key" : "LAB"}
-        summary: String containing the title of the of the ticket.
-        issue_type: Dictionary containing the issue type.
-                    Example:
-                        {"name" : "Bug"}
-        description (Optional): String containing the description of the ticket.
-        """
+    def __init__(self, project: str, summary: str, issue_type: str, description: str = None):
         self.id = None
         self.comments = None
         self.project = project
@@ -24,79 +12,59 @@ class Ticket:
         self.description = description
 
 
-class Jira:
+class JiraClient:
+    def __init__(self, server: str, api: str, username: str, password: str):
+        options = {"server": server}
+        self.api = api
+        self.jira = JIRA(options=options, basic_auth=(username, password))
 
-    def __init__(self):
-        with open('info.json', 'r') as json_file_info:
-            self.info = json.load(json_file_info)
-
-        self.options = {
-            "server": f"{self.info['server']}"
+    def create_ticket(self, ticket: Ticket):
+        fields = {
+            "project": {"key": ticket.project},
+            "summary": ticket.summary,
+            "description": ticket.description,
+            "issuetype": {"name": ticket.issue_type},
         }
+        new_issue = self.jira.create_issue(fields=fields)
+        return new_issue
 
-        self.api = f"{self.info['api']}"
-        self.user = f"{self.info['username']}"
-        self.jira = JIRA(options=self.options, basic_auth=(self.user, self.api))
+    def get_ticket(self, ticket_id: str) -> Ticket:
+        try:
+            issue = self.jira.issue(ticket_id)
+            summary = issue.fields.summary
+            project = issue.fields.project.key
+            issue_type = issue.fields.issuetype.name
+            description = issue.fields.description
+            ticket = Ticket(project, summary, issue_type, description)
+            ticket.id = ticket_id
+            ticket.comments = self.jira.comments(ticket_id)
+            return ticket
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
 
-    def create(self):
-        info_dict = {
-            'project': {'key': 'LAB'},
-            'summary': 'Summary',
-            'description': '*Please perform the following tasks*',
-            'issuetype': {'name': 'Task'},
+    def update_ticket(self, ticket: Ticket):
+        fields = {
+            "summary": ticket.summary,
+            "description": ticket.description,
         }
+        self.jira.issue(ticket.id).update(fields=fields)
 
-        new_issue = self.jira.create_issue(fields=info_dict)
-        print(new_issue)
-
-    def get(self, ticket_id):
-        """Get ticket from Jira and return a Ticket object.
-        ticket_id: String containing the ID of the ticket to retrieve.
-
-        return: Ticket object or None if invalid id is provided."""
-        comments = self.jira.comments(ticket_id)
-        issue = self.jira.issue(ticket_id)
-        print(issue.fields)
-        summary = issue.raw["fields"]["summary"]
-        project = issue.raw["fields"]["project"]["key"]
-        issue_type = issue.raw['fields']['issuetype']['name']
-        description = issue.fields.description
-
-        # print(project, '\n', summary, issue_type, description)
-        print(f"Project: {project}\nSummary: {summary}\nIssue Type: {issue_type}\nDescription:\n{description}")
-
-        # ticket = Ticket(project, summary, issue_type, description)
-
-    # def get_info(self, ticket_id):
-    #     issue = self.jira.issue(ticket_id)
-    #     comments = self.jira.comments(ticket_id)
-    #     summary = issue.fields.description
-    #
-    #     print(summary, '\n')
-    #
-    #     for i in comments:
-    #         author = self.jira.comment(ticket_id, i).author.displayName
-    #         time = self.jira.comment(ticket_id, i).created
-    #         print(author, time, i.body)
-
-    def update_info(self, ticket_id):
-        issue = self.jira.issue(ticket_id)
-        issue.update(fields={'summary': 'new summary', 'description': 'A new summary was added'})
-
-    def delete(self, ticket_id):
-        issue = self.jira.issue(ticket_id)
-        issue.delete()
+    def delete_ticket(self, ticket_id: str):
+        self.jira.issue(ticket_id).delete()
 
 
-# ticket = Ticket({"key": "LAB"}, "This is a test ticket.", {"name": "Task"})
-# jira = Jira
-# jira.create(ticket)
-# ticket_id = "123"
-# ticket = jira.get(ticket_id)
-#
-# ticket.description = "new description"
-# ticket.id = "!23"
-# # throws exception if ticket_id is invalid or None
-# jira.update(ticket)
-j = Jira()
-j.get('LAB-3587')
+def main():
+    with open("info.json", "r") as json_file_info:
+        info = json.load(json_file_info)
+    jira = JiraClient(info["server"], info["api"], info["username"], info["password"])
+    ticket_id = "LAB-3587"
+    ticket = jira.get_ticket(ticket_id)
+    if ticket:
+        print(f"Project: {ticket.project}\nSummary: {ticket.summary}\nIssue Type: {ticket.issue_type}\nDescription:\n{ticket.description}")
+        ticket.description = "new description"
+        jira.update_ticket(ticket)
+
+
+if __name__ == "__main__":
+    main()
